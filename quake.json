@@ -1,0 +1,13 @@
+[
+  {
+    "id": "fake001",
+    "source": "fakesource",
+    "magnitude": 7.8,
+    "depth": 15.0,
+    "lat": 13.75,
+    "lon": 100.5,
+    "location": "Bangkok, Thailand",
+    "utcDateTime": "2025-08-01T03:33:00Z",
+    "hasTsunamiSafe": true
+  }
+]
