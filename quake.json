@@ -8,6 +8,6 @@
     "lon": 100.5,
     "location": "Bangkok, Thailand",
     "utcDateTime": "2025-08-01T03:33:00Z",
-    "hasTsunamiSafe": true
+    "hasTsunamiSafe": false
   }
 ]
