@@ -27,6 +27,11 @@ jobs:
           git commit -m "Update quake.json"
         continue-on-error: true  # กันไว้ถ้าไม่มีอะไรเปลี่ยน
 
+      - name: Pull latest changes (rebase)
+        run: |
+          git pull --rebase origin main
+        continue-on-error: true  # กันไว้กรณี conflict หรือไม่มีอะไรใหม่
+
       - name: Push changes back to repo
         env:
           TOKEN: ${{ secrets.GITHUB_TOKEN }}
