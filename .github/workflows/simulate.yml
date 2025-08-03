@@ -2,30 +2,39 @@ name: Simulate Earthquake Every 1 Minute
 
 on:
   schedule:
-    - cron: '*/1 * * * *'  # ✅ ทุก 1 นาที (UTC)
-  workflow_dispatch:       # ✅ เผื่ออยากกดรันเองด้วยก็ยังอยู่
+    - cron: '*/1 * * * *' # Run every 1 minute
+  workflow_dispatch:
 
 jobs:
   simulate:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.x'
 
       - name: Install dependencies
         run: pip install -r requirements.txt || true
 
-      - name: Run simulation script
+      - name: Run earthquake generator
         run: python simulate_quake_generator.py
+
+      - name: Set Git identity
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions@github.com"
 
       - name: Commit changes
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add quake.json
-          git commit -m "Update quake.json with simulated event at $(date -u +"%Y-%m-%dT%H:%M:%SZ")" || echo "No changes to commit"
-          git push
+          git commit -m "⛰️ Simulated new quake" || echo "No changes to commit"
+
+      - name: Push to repository
+        run: git push origin main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
