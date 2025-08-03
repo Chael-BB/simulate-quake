@@ -1,0 +1,33 @@
+name: Simulate Earthquake Every 5 Minutes
+
+on:
+  schedule:
+    - cron: '*/5 * * * *'  # ทุก 5 นาที (UTC)
+  workflow_dispatch:       # ให้กด Run เองก็ได้
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt || true
+
+      - name: Run simulation
+        run: python simulate_quake_generator.py
+
+      - name: Commit and push changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add quake.json
+          git commit -m "🤖 Simulated quake at $(date -u +'%Y-%m-%dT%H:%M:%SZ')" || echo "No changes"
+          git push
