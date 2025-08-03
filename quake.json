@@ -934,5 +934,17 @@
     "date": "2025-08-03",
     "time": "07:19:16",
     "tsunamiWarning": "yes"
+  },
+  {
+    "id": "sim_20250803072323",
+    "source": "simulate",
+    "location": "Chiang Mai",
+    "lat": 35.7137,
+    "lon": 162.6557,
+    "magnitude": 6.7,
+    "depth": 48,
+    "date": "2025-08-03",
+    "time": "07:23:23",
+    "tsunamiWarning": "no"
   }
 ]
