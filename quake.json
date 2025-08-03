@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "id": "sim_20250803024153",
+    "source": "simulate",
+    "location": "Tokyo",
+    "lat": 57.4046,
+    "lon": -8.3209,
+    "magnitude": 6.6,
+    "depth": 66,
+    "date": "2025-08-03",
+    "time": "02:41:53",
+    "tsunamiWarning": "yes"
+  }
+]
