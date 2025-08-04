@@ -6550,5 +6550,17 @@
     "date": "2025-08-04",
     "time": "06:11:20",
     "tsunamiWarning": "yes"
+  },
+  {
+    "id": "sim_20250804061601",
+    "source": "simulate",
+    "location": "Bangkok",
+    "lat": 8.8974,
+    "lon": 4.4614,
+    "magnitude": 7.1,
+    "depth": 18,
+    "date": "2025-08-04",
+    "time": "06:16:01",
+    "tsunamiWarning": "no"
   }
 ]
