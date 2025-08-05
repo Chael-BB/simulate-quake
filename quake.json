@@ -15106,5 +15106,17 @@
     "date": "2025-08-05",
     "time": "16:19:39",
     "tsunamiWarning": "yes"
+  },
+  {
+    "id": "sim_20250805162233",
+    "source": "simulate",
+    "location": "Jakarta",
+    "lat": 34.6399,
+    "lon": -27.9378,
+    "magnitude": 6.9,
+    "depth": 53,
+    "date": "2025-08-05",
+    "time": "16:22:33",
+    "tsunamiWarning": "no"
   }
 ]
