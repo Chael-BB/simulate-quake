@@ -18406,5 +18406,17 @@
     "date": "2025-08-06",
     "time": "05:04:30",
     "tsunamiWarning": "no"
+  },
+  {
+    "id": "sim_20250806050919",
+    "source": "simulate",
+    "location": "Tokyo",
+    "lat": 8.194,
+    "lon": -77.9908,
+    "magnitude": 5.3,
+    "depth": 61,
+    "date": "2025-08-06",
+    "time": "05:09:19",
+    "tsunamiWarning": "no"
   }
 ]
