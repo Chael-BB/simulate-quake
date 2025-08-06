@@ -21238,5 +21238,17 @@
     "date": "2025-08-06",
     "time": "16:17:44",
     "tsunamiWarning": "no"
+  },
+  {
+    "id": "sim_20250806161945",
+    "source": "simulate",
+    "location": "Phuket",
+    "lat": -2.8753,
+    "lon": -163.0046,
+    "magnitude": 4.9,
+    "depth": 67,
+    "date": "2025-08-06",
+    "time": "16:19:45",
+    "tsunamiWarning": "yes"
   }
 ]
