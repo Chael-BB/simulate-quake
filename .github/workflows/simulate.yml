@@ -1,17 +1,21 @@
-name: Simulate Earthquake Every 1 Minute
+name: Simulate Earthquake (Manual Only)
 
 on:
-  schedule:
-    - cron: "*/1 * * * *"
-  workflow_dispatch:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
 
 jobs:
   simulate:
     runs-on: ubuntu-latest
+    concurrency:
+      group: simulate-quake
+      cancel-in-progress: true
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Set Git identity
         run: |
@@ -24,13 +28,13 @@ jobs:
       - name: Commit changes
         run: |
           git add quake.json
-          git commit -m "Update quake.json"
-        continue-on-error: true  # กันไว้ถ้าไม่มีอะไรเปลี่ยน
+          git commit -m "Update quake.json" || echo "No changes to commit"
+        continue-on-error: true
 
       - name: Pull latest changes (rebase)
         run: |
-          git pull --rebase origin main
-        continue-on-error: true  # กันไว้กรณี conflict หรือไม่มีอะไรใหม่
+          git pull --rebase origin main || echo "Nothing to rebase"
+        continue-on-error: true
 
       - name: Push changes back to repo
         env:
