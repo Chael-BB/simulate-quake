@@ -2,15 +2,20 @@
 # -*- coding: utf-8 -*-
 
 """
-Simulate-Quake Uploader (LEGACY ARRAY FORMAT)
-- เขียน dist/quake.json เป็น "ลิสต์" ของเหตุการณ์ [ {...}, {...}, ... ]
-- เติมเหตุการณ์ใหม่ไว้ "บนสุด" และเก็บแค่จำนวนล่าสุดตาม --keep (ดีฟอลต์ 120)
-- commit + push ไปยัง branch ที่กำหนด (ดีฟอลต์ main)
-- GitHub Actions จะ deploy dist/ ไป Pages อัตโนมัติ
+Simulate-Quake Uploader (LEGACY ARRAY FORMAT) — Significance-Matched
+- เขียน dist/quake.json เป็นลิสต์เหตุการณ์ [ {...}, {...}, ... ] โดยใส่รายการใหม่ไว้บนสุด
+- "สุ่มทั้งมีและไม่มีสึนามิ" ตามสัดส่วน --tsu-ratio (ดีฟอลต์ 0.5)
+- ทุกเหตุการณ์จะถูก "คัด" ด้วย heuristic significance ให้ผ่านเกณฑ์ --target (ดีฟอลต์ 230)
+- commit + push → GitHub Actions deploy -> GitHub Pages
+
+การยืนยันตัวตน:
+- ใช้ credential ปกติ หรือ
+- ตั้ง env: GITHUB_TOKEN และ GITHUB_REPO แล้วใส่ --token-push
 """
 
 import argparse
 import json
+import math
 import os
 import random
 import string
@@ -20,11 +25,24 @@ import time
 from datetime import datetime, timezone
 from math import cos, radians
 
+# -----------------------------
+# ค่าตั้งต้น
+# -----------------------------
 DEFAULT_BRANCH = "main"
 DEFAULT_INTERVAL_SEC = 60
-DEFAULT_KEEP = 120   # เก็บเหตุการณ์ล่าสุดกี่รายการ
+DEFAULT_KEEP = 120            # เก็บเหตุการณ์ล่าสุดกี่รายการ
+DEFAULT_TARGET = 230.0        # เกณฑ์ significance (ยืดหยุ่นตามแอปรับจริง)
+DEFAULT_TSU_RATIO = 0.5       # โอกาสเป็น tsunami event (0.0 - 1.0)
+DEFAULT_MAX_TRIES = 25        # จำนวนครั้งสูงสุดในการสุ่มให้ทะลุเป้า
 
+# พิกัดอ้างอิงผู้ใช้ (ให้คะแนนขึ้นกับระยะทางจากผู้ใช้)
+BKK_LAT, BKK_LON = 13.86, 100.52
+
+# -----------------------------
+# Utils
+# -----------------------------
 def iso_now_utc():
+    # มี timezone +00:00 แบบตัวอย่าง
     return datetime.now(timezone.utc).isoformat()
 
 def rand_id(prefix="sim"):
@@ -32,6 +50,7 @@ def rand_id(prefix="sim"):
     return f"{prefix}-{salt}"
 
 def jitter_deg(lat, km_lat=10.0, km_lon=10.0):
+    """ ขยับ lat/lon เป็นกิโลเมตร -> องศา (ประมาณการ) """
     dlat = (km_lat / 111.0) * (random.random() - 0.5) * 2
     denom = 111.0 * max(0.1, cos(radians(lat)))
     dlon = (km_lon / denom) * (random.random() - 0.5) * 2
@@ -43,9 +62,7 @@ def load_legacy_array(path):
     try:
         with open(path, "r", encoding="utf-8") as f:
             data = json.load(f)
-            if isinstance(data, list):
-                return data
-            return []
+            return data if isinstance(data, list) else []
     except Exception:
         return []
 
@@ -79,104 +96,100 @@ def git_commit_and_push(repo_dir, branch, token_push=False):
     else:
         run(["git", "push", "origin", branch], cwd=repo_dir)
 
-# ---------- SCENARIOS ----------
-def inland_thailand_strong():
+# -----------------------------
+# Distance & Significance Heuristic
+# -----------------------------
+def haversine_km(lat1, lon1, lat2, lon2):
+    R = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlmb = math.radians(lon2 - lon1)
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlmb/2)**2
+    return R * (2 * math.atan2(math.sqrt(a), math.sqrt(1 - a)))
+
+def heuristic_significance(mag: float, dist_km: float, tsunami: bool) -> float:
+    """
+    แบบจำลองคะแนน (ใกล้เคียงแนวคิดในแอป: magnitude↑, distance↓, tsunami bonus)
+    ปรับค่าคงที่ได้ด้วย --target เพื่อแมทช์พฤติกรรมจริงใน SafeQuake
+    """
+    # term ของ magnitude ขึ้นแรงแบบกำลัง (ให้ M7+ เด้งชัด)
+    mag_term = (mag ** 3) * 1.05          # ~350–500+ เมื่อ M~7–8
+    # ระยะทางลดคะแนนแบบลอการิทึม (ไม่ให้ 1–10 km โดดเวอร์เกิน)
+    dist_term = -35.0 * math.log10(dist_km + 1.0)
+    # โบนัสสึนามิ (ทดสอบสายทะเล)
+    tsu_term = 120.0 if tsunami else 0.0
+    return mag_term + dist_term + tsu_term
+
+# -----------------------------
+# Scenarios (ตัวสร้าง candidate)
+# -----------------------------
+def inland_thailand_candidate():
+    """ เหตุการณ์ในแผ่นดินไทย (ทดสอบ shake) """
     base_lat, base_lon = 15.5, 101.8
     dlat, dlon = jitter_deg(base_lat, km_lat=150, km_lon=150)
     lat = round(base_lat + dlat, 4)
     lon = round(base_lon + dlon, 4)
-    mag = round(random.uniform(7.3, 8.2), 1)
+    # แมกนิจูดค่อนสูงเพื่อให้ผ่านเกณฑ์ง่ายขึ้น
+    mag = round(random.uniform(6.9, 8.2), 1)
     depth = round(random.uniform(8.0, 28.0), 1)
     return {"place": "Simulated (Inland Thailand)", "lat": lat, "lon": lon,
             "magnitude": mag, "depth": depth, "tsunami": False}
 
-def andaman_tsunami():
+def andaman_candidate():
+    """ เหตุการณ์ทะเลอันดามัน (ทดสอบ tsunami) """
     base_lat, base_lon = 8.2, 97.2
     dlat, dlon = jitter_deg(base_lat, km_lat=160, km_lon=160)
     lat = round(base_lat + dlat, 4)
     lon = round(base_lon + dlon, 4)
-    mag = round(random.uniform(7.4, 8.6), 1)
+    mag = round(random.uniform(7.2, 8.6), 1)  # ทะเลให้แมกนิจูดสูงกว่า
     depth = round(random.uniform(8.0, 30.0), 1)
     return {"place": "Simulated (Andaman Sea)", "lat": lat, "lon": lon,
             "magnitude": mag, "depth": depth, "tsunami": True}
 
-def far_big_event():
-    base_lat, base_lon = 38.3, 142.4
-    dlat, dlon = jitter_deg(base_lat, km_lat=200, km_lon=200)
-    lat = round(base_lat + dlat, 4)
-    lon = round(base_lon + dlon, 4)
-    mag = round(random.uniform(7.8, 8.6), 1)
-    depth = round(random.uniform(10.0, 40.0), 1)
-    return {"place": "Simulated (NW Pacific, far)", "lat": lat, "lon": lon,
-            "magnitude": mag, "depth": depth, "tsunami": False}
-
-SCENARIOS = [
-    ("inland", inland_thailand_strong),
-    ("andaman", andaman_tsunami),
-    ("far_big", far_big_event),
-]
-
-def build_event(scn):
-    now_iso = iso_now_utc()
+def build_event(obj):
     return {
         "id": rand_id("sim"),
-        "magnitude": scn["magnitude"],
-        "depth": scn["depth"],
-        "lat": scn["lat"],
-        "lon": scn["lon"],
-        "place": scn["place"],
-        "time": now_iso,
-        "tsunami": scn["tsunami"]
+        "magnitude": obj["magnitude"],
+        "depth": obj["depth"],
+        "lat": obj["lat"],
+        "lon": obj["lon"],
+        "place": obj["place"],
+        "time": iso_now_utc(),
+        "tsunami": obj["tsunami"]
     }
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--interval", type=int, default=DEFAULT_INTERVAL_SEC,
-                    help="วินาทีระหว่างการอัปเดต (ดีฟอลต์ 60)")
-    ap.add_argument("--branch", default=DEFAULT_BRANCH, help="branch สำหรับ push (ดีฟอลต์ main)")
-    ap.add_argument("--keep", type=int, default=DEFAULT_KEEP,
-                    help="เก็บเหตุการณ์ล่าสุดกี่รายการ (ดีฟอลต์ 120)")
-    ap.add_argument("--once", action="store_true", help="สร้างเหตุการณ์ครั้งเดียวแล้วออก")
-    ap.add_argument("--scenario", choices=[n for n, _ in SCENARIOS],
-                    help="บังคับ scenario (inland/andaman/far_big)")
-    ap.add_argument("--token-push", action="store_true",
-                    help="push ด้วย https://<GITHUB_TOKEN>@github.com/<GITHUB_REPO>.git")
-    args = ap.parse_args()
-
-    repo_dir = os.path.abspath(os.path.dirname(os.path.dirname(__file__)))
-    quake_path = os.path.join(repo_dir, "dist", "quake.json")
-    idx = 0
-
-    while True:
-        if args.scenario:
-            scn = dict(SCENARIOS)[args.scenario]()
+def sample_significance_matched(tsunami_first: bool, target: float, max_tries: int):
+    """
+    พยายามสุ่ม candidate แล้วคัดให้คะแนน >= target
+    ถ้าไม่ถึงเป้า จะค่อยๆ ดันแมกนิจูด/เข้าใกล้ผู้ใช้มากขึ้น
+    """
+    for i in range(max_tries):
+        if tsunami_first:
+            cand = andaman_candidate()
         else:
-            name, fn = SCENARIOS[idx % len(SCENARIOS)]
-            scn = fn()
-            if idx % 3 == 2:
-                scn = andaman_tsunami()
+            cand = inland_thailand_candidate()
 
-        new_event = build_event(scn)
+        dist = haversine_km(BKK_LAT, BKK_LON, cand["lat"], cand["lon"])
+        score = heuristic_significance(cand["magnitude"], dist, cand["tsunami"])
 
-        arr = load_legacy_array(quake_path)
-        arr.insert(0, new_event)
-        if len(arr) > args.keep:
-            arr = arr[:args.keep]
-        write_json(quake_path, arr)
+        if score >= target:
+            return build_event(cand)
 
-        try:
-            git_commit_and_push(repo_dir, args.branch, token_push=args.token_push)
-            print("✅ pushed dist/quake.json")
-        except Exception as e:
-            print(f"❌ push failed: {e}", file=sys.stderr)
+        # ปรับเพิ่มความแรง/เข้าใกล้ แล้วลองใหม่
+        #  - สำหรับ inland: เพิ่ม mag เล็กน้อย และดึงเข้าหา BKK
+        #  - สำหรับ tsunami: เพิ่ม mag ให้แรงขึ้น
+        if not cand["tsunami"]:
+            # ดึงตำแหน่งเข้าใกล้กทม. ~20–60 กม.
+            dlat, dlon = jitter_deg(BKK_LAT, km_lat=60, km_lon=60)
+            cand["lat"] = round(BKK_LAT + dlat, 4)
+            cand["lon"] = round(BKK_LON + dlon, 4)
+            cand["magnitude"] = round(min(8.7, cand["magnitude"] + random.uniform(0.2, 0.5)), 1)
+        else:
+            cand["magnitude"] = round(min(8.9, cand["magnitude"] + random.uniform(0.2, 0.4)), 1)
 
-        if args.once:
-            break
-
-        now = time.time()
-        wait = args.interval - (now % args.interval)
-        idx += 1
-        time.sleep(wait)
-
-if __name__ == "__main__":
-    main()
+    # ถ้ามีเหตุสุดวิสัยยังไม่ถึงเป้า ให้ยิง "ค้อนใหญ่" เพื่อการันตี
+    if tsunami_first:
+        fallback = {"place": "Simulated (Andaman Sea)", "lat": 8.4, "lon": 97.1,
+                    "magnitude": 8.6, "depth": 12.0, "tsunami": True}
+    else:
+        fallback = {"
