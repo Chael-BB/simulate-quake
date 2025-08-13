@@ -1,0 +1,97 @@
+name: Simulate Earthquake
+
+on:
+  # รันด้วยมือได้ (ปุ่ม Run workflow)
+  workflow_dispatch:
+    inputs:
+      run_for_minutes:
+        description: "Run for N minutes (push every minute)"
+        required: false
+        default: "10"
+        type: number
+  # ตั้งเวลา (ละเอียดสุดทุก 5 นาที)
+  schedule:
+    - cron: "*/5 * * * *"
+
+permissions:
+  contents: write  # ต้องมีเพื่อให้ commit/push ได้เมื่อถูก trigger ด้วย schedule
+
+concurrency:
+  group: simulate-quake
+  cancel-in-progress: true
+
+jobs:
+  simulate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Generate & push quakes
+        env:
+          # ถ้ากดรันมือ → ใช้ค่าที่กรอก; ถ้าเป็น schedule → ใช้ "1" นาที
+          RUN_FOR_MINUTES: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.run_for_minutes || '1' }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json, random, datetime, os, subprocess, time
+
+          PATH = "quake.json"
+
+          def random_quake():
+              now = datetime.datetime.utcnow()
+              return {
+                  "id": f"sim_{now.strftime('%Y%m%d%H%M%S')}",
+                  "source": "simulate",
+                  "location": random.choice(["Bangkok", "Chiang Mai", "Phuket", "Tokyo", "Jakarta"]),
+                  "lat": round(random.uniform(-90, 90), 4),
+                  "lon": round(random.uniform(-180, 180), 4),
+                  "magnitude": round(random.uniform(4.5, 8.9), 1),
+                  "depth": random.randint(5, 70),
+                  "date": now.strftime("%Y-%m-%d"),
+                  "time": now.strftime("%H:%M:%S"),
+                  "tsunamiWarning": random.choice(["yes", "no"])
+              }
+
+          def load_list():
+              if os.path.exists(PATH):
+                  try:
+                      with open(PATH, "r", encoding="utf-8") as f:
+                          return json.load(f)
+                  except Exception:
+                      return []
+              return []
+
+          minutes = int(os.environ.get("RUN_FOR_MINUTES", "1"))
+          branch  = os.environ["BRANCH"]
+
+          # ตั้ง identity ให้ git
+          subprocess.run(["git", "config", "user.name", "github-actions[bot]"], check=True)
+          subprocess.run(["git", "config", "user.email", "github-actions[bot]@users.noreply.github.com"], check=True)
+
+          for i in range(minutes):
+              start = time.monotonic()
+
+              data = load_list()
+              q = random_quake()
+              data.append(q)
+
+              with open(PATH, "w", encoding="utf-8") as f:
+                  json.dump(data, f, indent=2, ensure_ascii=False)
+
+              subprocess.run(["git", "add", PATH], check=True)
+              # [skip ci] กัน workflow อื่นที่ฟัง event push (ถ้ามี) ไม่ต้องรันซ้ำ
+              subprocess.run(["git", "commit", "-m", f"Add {q['id']} [skip ci]"], check=True)
+              subprocess.run(["git", "push", "origin", branch], check=True)
+
+              elapsed = time.monotonic() - start
+              if i < minutes - 1:
+                  time.sleep(max(0, 60 - elapsed))  # เว้นให้ครบ 1 นาทีต่อรอบ
+
+              print(f"Pushed {q['id']}")
+          PY
